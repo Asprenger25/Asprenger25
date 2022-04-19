@@ -1,0 +1,16 @@
+flavors_of_cacao <- read_csv("Flavors_of_Cacao.csv")
+head(flavors_of_cacao)
+flavors_df <- flavors_of_cacao
+flavors_df %>% 
+  rename(Brand = `Company (Maker-if known)`)
+
+trimmed_flavors_df <- flavors_df %>%
+  select(Rating, `Cocoa Percent`, `Company (Maker-if known)`)
+View(trimmed_flavors_df)
+trimmed_flavors_df %>% 
+  summarize(sd(Rating))
+best_trimmed_flavors_df <- trimmed_flavors_df %>% 
+  filter(Rating >= 3.75, `Cocoa Percent`>= 80)
+
+ggplot(data = best_trimmed_flavors_df) +
+  geom_bar(mapping = aes(x = Rating))
