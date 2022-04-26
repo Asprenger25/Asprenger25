@@ -1,0 +1,141 @@
+install.packages('tidyverse')
+library(tidyverse)
+
+
+#The first step I chose to clean the names of the datasets
+daily_activity= dailyActivity_merged
+calories = daily_calories
+daily_steps = dailySteps_merged
+intensities = intesities  
+sleep = sleepDay_merged
+weight= weightLogInfo_merged
+
+
+#now there are three that need datetime formatted
+
+intensities$ActivityHour = as.POSIXct(intensities$ActivityHour, format = "%m/%d/%Y %I:%M:%S %p")
+intensities$time <- format(intensities$ActivityHour, format =  "%H:%M:%S")
+intensities$date <- format(intensities$ActivityHour, format = "%m/%d/%Y")
+
+calories$ActivityHour = as.POSIXct(calories$ActivityHour, format = "%m/%d/%Y %I:%M:%S %p")
+calories$time <- format(calories$ActivityHour, format =  "%I:%M:%S %p")
+calories$date <- format(calories$ActivityHour, format =  "%m/%d/%Y")
+
+sleep$SleepDay = as.POSIXct(sleep$SleepDay, format = "%m/%d/%Y %I:%M:%S %p")
+sleep$date <- format(sleep$SleepDay, format =  "%m/%d/%Y" )
+
+daily_activity$ActivityDate = as.POSIXct(daily_activity$ActivityDate, format = "%m/%d/%Y")
+daily_activity$date <- format(daily_activity$ActivityDate, format = "%m/%d/%Y" )
+
+#Now that the formats all line up, I can check for unique users within each section
+
+n_unique(calories$Id)
+n_unique(daily_activity$Id)
+n_unique(daily_steps$Id)
+n_unique(intensities$Id)
+n_unique(sleep$Id)
+n_unique(weight$Id)
+
+# The first four all match with 33 users, but the sleeplog only has 24 and the weight has 8 distinct users. Encouraging people to use the sleep and weight features could benefit.
+
+#Now I want to see some of the data with the summary function to give me the mins and maxes as well as the mean
+
+daily_activity %>% 
+  select(TotalSteps, TotalDistance, SedentaryMinutes, Calories) %>% 
+  summary()
+
+calories %>% 
+  select(Calories) %>% 
+  summary()
+
+daily_activity %>% 
+  select(VeryActiveMinutes, FairlyActiveMinutes, LightlyActiveMinutes, SedentaryMinutes) %>% 
+  summary()
+
+weight %>% 
+  select(WeightPounds, BMI) %>% 
+  summary()
+
+sleep %>% 
+  select(TotalSleepRecords, TotalMinutesAsleep, TotalTimeInBed) %>% 
+  summary()
+
+#After seeing some of this data, I can see that the average person walks 7638 steps per day, which equates to somewhat active and could be improved
+
+#The vast majority of people are lightly active or sedentary
+
+#the average person sleeps 7 hour 13 minutes which is lower than the daily reccomended 8 hours
+
+ggplot(data = sleep) + geom_point(mapping = aes(x = TotalTimeInBed, y = TotalMinutesAsleep), color = "blue") +
+  labs(title = "Time in Bed vs. Time Asleep") 
+
+#This chart shows the correlation that the more time a person spends in bed, the more sleep they end up getting
+
+#Now I want to see how activity affects sleep
+
+merger_sleep_activity <- merge(sleep, daily_activity, by = c("Id", "date"))
+
+ggplot(data = merger_sleep_activity, aes(x = TotalSteps, y = TotalMinutesAsleep)) +geom_smooth()+ labs(title = "Amount of Sleep vs. Total Steps")
+
+
+ggplot(data = merger_sleep_activity, aes(x = TotalSteps, y = Calories)) + geom_point() + geom_smooth()+
+  labs(title = "Total Steps vs. Calories Consumed")
+#There is a correlation between how many steps a person takes and how many calories they consume.
+
+#I want to find out when people are active during the day.
+
+hourly_intensities<-intensities %>% 
+  group_by(time) %>% 
+  drop_na() %>% 
+  summarize(mean_total_intensities = mean(TotalIntensity))
+
+ggplot(data = hourly_intensities, aes(x = time, y = mean_total_intensities)) + geom_histogram(stat = "Identity", fill = "Blue") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(title = "Average Total Intensity vs. Time", subtitle = "When are people most active during the day?")
+#It appears that people are most active between 5pm and 8pm.
+
+#I want to now see what that types of people use the device.
+
+daily_average<- merger_sleep_activity %>% 
+  group_by(Id) %>% 
+  summarize(avg_steps = mean(TotalSteps), avg_calories = mean(Calories), avg_sleep = mean(TotalMinutesAsleep))
+
+head(daily_average)
+
+user_type<- daily_average %>% 
+  mutate(user_type = case_when(avg_steps < 5000 ~ "Sedentary", avg_steps >= 5000 & avg_steps <=7499 ~ "Lightly Active" , avg_steps >= 7500 & avg_steps <=9999 ~ "Moderately Active", avg_steps >= 10000 ~ "Very Active" ))
+
+user_type_perccent<- user_type %>% 
+  group_by(user_type) %>% 
+  summarize(total = n()) %>% 
+  mutate(totals = sum(total)) %>% 
+  group_by(user_type) %>% 
+  summarize(total_percent = total/totals) %>% 
+  mutate(labels = scales::percent(total_percent))
+
+
+ggplot(data = user_type_perccent, aes(x = "", y =total_percent , fill = user_type)) + geom_bar(stat = "identity", width = 1) + coord_polar("y", start = 0) +
+  theme_void() + geom_text(aes(label =labels), position = position_stack(vjust = 0.5)) + labs(title = "User Type Percentages")
+
+#There is a pretty even distribution of users, but is there a way to get the sedentary users more active?
+
+
+#How often do users use their device during the month?
+
+daily_use<- merger_sleep_activity %>% 
+  group_by(Id) %>% 
+  summarize(days_used = sum(n())) %>% 
+  mutate(usage_type = case_when(days_used >=1 & days_used <= 10 ~ "Light use", days_used>10 &days_used <=20 ~ "Moderate use", days_used>20 ~ "High use"))
+
+daily_use_percent<- daily_use %>% 
+  group_by(usage_type) %>% 
+  summarize(total = n()) %>% 
+  mutate(totals = sum(total)) %>% 
+  group_by(usage_type) %>% 
+  summarize(total_percent = total/totals) %>% 
+  mutate(labels = scales::percent(total_percent))
+
+ggplot(data = daily_use_percent, aes(x = "", y =total_percent , fill = usage_type)) + geom_bar(stat = "identity", width = 1) + coord_polar("y", start = 0) +
+  theme_void() + geom_text(aes(label =labels), position = position_stack(vjust = 0.5)) + labs(title = "Usage Percentages")
+
+
